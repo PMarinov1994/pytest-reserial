@@ -4,7 +4,10 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "pytest-reserial"
-authors = [{name = "Alexander Bessman", email = "alexander.bessman@gmail.com"}]
+authors = [
+    {name = "Alexander Bessman", email = "alexander.bessman@gmail.com"},
+    {name = "Plamen Marinov", email = "pmarinov@hilcher.com"},
+]
 dynamic = ["version", "description"]
 readme = "README.md"
 requires-python = ">=3.9"
@@ -39,6 +42,7 @@ Home = "https://github.com/bessman/pytest-reserial"
 
 [project.entry-points."pytest11"]
 reserial = "pytest_reserial.reserial"
+retpc = "pytest_reserial.retcp"
 
 [project.optional-dependencies]
 test = [

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.0] - 2025-09-30
+
+- Add support for TCP connections
+- Add support for delay injection to the communication
+- Backward compatible with the old API (old tests will run without changes)
+
 ## [0.4.4] - Development
 
 ## [0.4.3] - 2024-12-22
