@@ -40,26 +40,19 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
     log: TrafficLog
     log_stats: TrafficLogStats
     mode: Mode
+
+    # Check this event periodically to interrupt the call
     shutdown_evt: threading.Event
 
     def handle(self: TestTCPHandler) -> None:
         """Handle incoming TCP connection request."""
-        # NOTE: handle_replay() will return False only if
-        #       there are more messages recorded, but the client will disconnect.
-        #       This means that a new connection should be made to consume the rest of
-        #       the messages. In any other case, shutdown the server.
-        shutdown = True
-        try:
-            if self.mode != Mode.REPLAY:
-                msg = "Only --replay is supported"
-                pytest.fail(msg)
-            shutdown = self.handle_replay()
-        finally:
-            if shutdown:
-                self.shutdown_evt.set()
+        if self.mode != Mode.REPLAY:
+            msg = "Only --replay is supported"
+            pytest.fail(msg)
 
+        self.handle_replay()
 
-    def handle_replay(self: TestTCPHandler) -> bool:
+    def handle_replay(self: TestTCPHandler) -> None:
         """Iterate over expected data and respond the the client accordingly.
 
         Returns
@@ -69,17 +62,34 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
         """
         # For better type hints
         _socket: socket.socket = self.request
+        _socket.setblocking(False)
 
         while len(self.log_stats) > 0:
+            if self.shutdown_evt.is_set():
+                return
+
             stat_chunk = self.log_stats.pop(0)
             if stat_chunk[0] == "c":
-                # If there are more messages, we do not shutdown
-                return len(self.log_stats) == 0
+                return
 
             if stat_chunk[0] != "w":
                 pytest.fail("First message not Write (client side)\n")
 
-            data = bytes(_socket.recv(stat_chunk[1]))
+            data = bytes()
+            size_to_recv = stat_chunk[1]
+            while len(data) != stat_chunk[1]:
+                if self.shutdown_evt.is_set():
+                    return
+
+                try:
+                    data += _socket.recv(size_to_recv)
+                    size_to_recv -= len(data)
+                # NOTE: This is raised if the recv would block
+                #       which can happen if the client has not yet send data
+                #       It is up to the test to interupt a hang client
+                except BlockingIOError:
+                    pass
+
             size = len(data)
 
             expected_data = self.log["tx"][:size]
@@ -92,8 +102,10 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
                 stat = self.log_stats.pop(0)
                 time.sleep(stat[1])
 
-            while len(self.log_stats) > 0 and \
-                    (self.log_stats[0][0] == "r" or self.log_stats[0][0] == "t"):
+            while len(self.log_stats) > 0 and (self.log_stats[0][0] == "r" or self.log_stats[0][0] == "t"):
+
+                if self.shutdown_evt.is_set():
+                    return
 
                 stat = self.log_stats.pop(0)
 
@@ -110,7 +122,7 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
 
                 _socket.sendall(to_send)
 
-        return True
+        return
 
 
 @pytest.fixture
@@ -135,15 +147,12 @@ def retcp(monkeypatch: pytest.MonkeyPatch,
     log_stats = get_traffic_log_stats(mode, log_stats_path, test_name)
 
     tests_thread: TestableThread | None = None
-    watcher_thread: threading.Thread | None = None
 
+    server: socketserver.TCPServer | None = None
     if mode == Mode.REPLAY:
         server = socketserver.TCPServer(("localhost", 0), TestTCPHandler)
 
         shutdown_evt = threading.Event()
-        def stop_server_worker() -> None:
-            shutdown_evt.wait()
-            server.shutdown()
 
         if len(log_stats) == 0:
             pytest.fail(f"No log_stats recorded for test '{test_name}'\n")
@@ -155,9 +164,6 @@ def retcp(monkeypatch: pytest.MonkeyPatch,
 
         addr = "localhost"
         port = server.server_address[1]
-
-        watcher_thread = threading.Thread(target=stop_server_worker)
-        watcher_thread.start()
 
         # Run the server in a background thread
         tests_thread = TestableThread(
@@ -182,8 +188,10 @@ def retcp(monkeypatch: pytest.MonkeyPatch,
         write_log(log, log_stats, log_path, log_stats_path, test_name)
         return
 
-    if mode == Mode.REPLAY and tests_thread and watcher_thread:
-        watcher_thread.join()
+    if mode == Mode.REPLAY and tests_thread and server:
+        TestTCPHandler.shutdown_evt.set()
+        server.shutdown()
+
         tests_thread.join()
 
         if tests_thread.exc:
