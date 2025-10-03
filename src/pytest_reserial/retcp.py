@@ -64,10 +64,7 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
         _socket: socket.socket = self.request
         _socket.setblocking(False)
 
-        while len(self.log_stats) > 0:
-            if self.shutdown_evt.is_set():
-                return
-
+        while not self.shutdown_evt.is_set() and len(self.log_stats) > 0:
             stat_chunk = self.log_stats.pop(0)
             if stat_chunk[0] == "c":
                 return
@@ -77,10 +74,7 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
 
             data = bytes()
             size_to_recv = stat_chunk[1]
-            while len(data) != stat_chunk[1]:
-                if self.shutdown_evt.is_set():
-                    return
-
+            while not self.shutdown_evt.is_set() and len(data) != stat_chunk[1]:
                 try:
                     data += _socket.recv(size_to_recv)
                     size_to_recv -= len(data)
@@ -98,31 +92,30 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
             if data != expected_data:
                 pytest.fail(f"Expected {expected_data}, got {data}")
 
-            if len(self.log_stats) > 0 and self.log_stats[0][0] == "t":
-                stat = self.log_stats.pop(0)
-                time.sleep(stat[1])
-
-            while len(self.log_stats) > 0 and (self.log_stats[0][0] == "r" or self.log_stats[0][0] == "t"):
-
-                if self.shutdown_evt.is_set():
-                    return
-
+            while (
+                not self.shutdown_evt.is_set() and
+                len(self.log_stats) > 0 and
+                (self.log_stats[0][0] == "r" or self.log_stats[0][0] == "t")
+            ):
                 stat = self.log_stats.pop(0)
 
                 if stat[0] == "t":
-                    time.sleep(stat[1])
-                    if len(self.log_stats) == 0:
-                        break
-                    stat = self.log_stats.pop(0)
+                    sleep = stat[1]
+                    self.wait_non_blocking(sleep)
+                else: # should be "r"
+                    size = stat[1]
+                    to_send = self.log["rx"][:size]
+                    self.log["rx"] = self.log["rx"][size:]
 
-                size = stat[1]
-
-                to_send = self.log["rx"][:size]
-                self.log["rx"] = self.log["rx"][size:]
-
-                _socket.sendall(to_send)
-
+                    _socket.sendall(to_send)
         return
+
+
+    def wait_non_blocking(self, seconds: int) -> None:
+        remaining = seconds
+        while not self.shutdown_evt and remaining > 0:
+            time.sleep(1)
+            remaining -= 1
 
 
 @pytest.fixture
