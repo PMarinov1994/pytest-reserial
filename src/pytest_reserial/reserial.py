@@ -506,5 +506,11 @@ def write_log(
             fsout.write(new_stats_line)
 
     # Overwrite old log file.
+    # On Windows if the file exists, rename will fail.
+    if log_path.exists():
+        log_path.unlink()
     Path(tmp_path).rename(log_path)
+
+    if log_stats_path.exists():
+        log_stats_path.unlink()
     Path(tmp_stats_path).rename(log_stats_path)
