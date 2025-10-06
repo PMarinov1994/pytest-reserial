@@ -5,9 +5,9 @@ from __future__ import annotations
 import socket
 import socketserver
 import threading
-from collections.abc import Buffer, Generator
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Generator
+from typing_extensions import Buffer
 
 import pytest
 
@@ -72,7 +72,7 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
             if stat_chunk[0] != "w":
                 pytest.fail("First message not Write (client side)\n")
 
-            data = bytes()
+            data = b""
             size_to_recv = stat_chunk[1]
             while not self.shutdown_evt.is_set() and len(data) != stat_chunk[1]:
                 try:

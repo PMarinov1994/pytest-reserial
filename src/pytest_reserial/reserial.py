@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import base64
 import json
-from pathlib import Path
 import time
-from typing import TYPE_CHECKING, Callable, Literal, Tuple
+from collections.abc import Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal, Union
 
 import pytest
 from serial import PortNotOpenError, Serial
@@ -17,10 +18,10 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 TrafficLog = dict[Literal["rx", "tx"], bytes]
-TrafficLogStats = list[Tuple[Literal["r", "w", "c", "t"], int]]
+TrafficLogStats = list[tuple[Literal["r", "w", "c", "t"], int]]
 PatchMethods = tuple[
     Callable[[Serial, int], bytes],  # read
-    Callable[[Serial, bytes], int | None],  # write
+    Callable[[Serial, bytes], Union[int, None]],  # write
     Callable[[Serial], None],  # open
     Callable[[Serial], None],  # close
     Callable[[Serial, bool], None],  # _reconfigure_port
@@ -29,7 +30,7 @@ PatchMethods = tuple[
 ]
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:  # noqa: D103
+def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("reserial")
     group.addoption(
         "--record",
@@ -212,18 +213,18 @@ def get_patched_methods(mode: Mode, log: TrafficLog, log_stats: TrafficLogStats)
         return get_replay_methods(log, log_stats)
     if mode == Mode.RECORD:
         return get_record_methods(log, log_stats)
-    return (
+    return ( # type: ignore[return-value]
         Serial.read,
         Serial.write,
         Serial.open,
         Serial.close,
-        Serial._reconfigure_port,  # noqa: SLF001 # type: ignore[attr-defined]
+        Serial._reconfigure_port,  # type: ignore[attr-defined] # noqa: SLF001
         Serial.in_waiting,
         Serial.reset_input_buffer,
     )
 
 
-def get_replay_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMethods:
+def get_replay_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMethods: # noqa: C901
     """Return patched read, write, open, etc methods for replaying logged traffic.
 
     Parameters
@@ -328,12 +329,12 @@ def get_replay_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
 
         self.is_open = False
 
-    @property
-    def replay_in_waiting(self: Serial) -> int:
+    @property # type: ignore[misc]
+    def replay_in_waiting(self: Serial) -> int: # noqa: ARG001
         """Return the number of bytes in RX data left to replay."""
         return len(log["rx"])
 
-    return (
+    return ( # type: ignore[return-value]
         replay_read,
         replay_write,
         replay_open,
@@ -348,7 +349,7 @@ def get_replay_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
 def replay_open(self: Serial) -> None:
     """Pretend that port was opened."""
     self.is_open = True
-    self.fd = None
+    self.fd = None # type: ignore[attr-defined]
 
 
 def replay_reconfigure_port(
@@ -398,7 +399,7 @@ def get_record_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
     real_write = Serial.write
     real_close = Serial.close
 
-    def record_write(self: Serial, data: bytes) -> int | None:
+    def record_write(self: Serial, data: bytes) -> Union[int, None]:
         """Record TX data before writing to the bus.
 
         Monkeypatch this method over Serial.write to record traffic. Parameters and
@@ -406,7 +407,7 @@ def get_record_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
         """
         log["tx"] += data
         log_stats.append(("w", len(data)))
-        written: int | None = real_write(self, data)
+        written: Union[int, None] = real_write(self, data)
         return written
 
     def record_read(self: Serial, size: int = 1) -> bytes:
@@ -424,12 +425,12 @@ def get_record_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
         log_stats.append(("c", -1))
         real_close(self)
 
-    return (
+    return ( # type: ignore[return-value]
         record_read,
         record_write,
         Serial.open,
         record_close,
-        Serial._reconfigure_port,  # noqa: SLF001 # type: ignore[attr-defined]
+        Serial._reconfigure_port,  # type: ignore[attr-defined] # noqa: SLF001
         Serial.in_waiting,
         Serial.reset_input_buffer,
     )
