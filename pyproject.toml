@@ -15,6 +15,7 @@ license = {file = "LICENSE"}
 dependencies = [
     "pytest",
     "pyserial",
+    "types-pyserial",
     "typing-extensions",
 ]
 classifiers = [

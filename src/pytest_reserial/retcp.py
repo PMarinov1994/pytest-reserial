@@ -6,10 +6,13 @@ import socket
 import socketserver
 import threading
 import time
-from typing import Any, Callable, Generator
-from typing_extensions import Buffer
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
+from typing_extensions import Buffer
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 from pytest_reserial.common import Mode, get_log_files, get_mode_from_config
 from pytest_reserial.reserial import (
@@ -22,10 +25,10 @@ from pytest_reserial.reserial import (
 from pytest_reserial.testable_thread import TestableThread
 
 PatchMethods = tuple[
-    Callable[[socket.socket, int, int], bytes], # recv
-    Callable[[socket.socket, Buffer, int], int ], # send
-    Callable[[socket.socket, Buffer, int], None], # sendall
-    Callable[[socket.socket], None], # close
+    Callable[[socket.socket, int, int], bytes],  # recv
+    Callable[[socket.socket, Buffer, int], int],  # send
+    Callable[[socket.socket, Buffer, int], None],  # sendall
+    Callable[[socket.socket], None],  # close
 ]
 
 
@@ -62,7 +65,7 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
         """
         # For better type hints
         _socket: socket.socket = self.request
-        _socket.setblocking(False)
+        _socket.setblocking(False)  # noqa: FBT003
 
         while not self.shutdown_evt.is_set() and len(self.log_stats) > 0:
             stat_chunk = self.log_stats.pop(0)
@@ -81,7 +84,7 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
                 # NOTE: This is raised if the recv would block
                 #       which can happen if the client has not yet send data
                 #       It is up to the test to interupt a hang client
-                except BlockingIOError:
+                except BlockingIOError:  # noqa: PERF203
                     pass
 
             size = len(data)
@@ -90,19 +93,19 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
             self.log["tx"] = self.log["tx"][size:]
 
             if data != expected_data:
-                pytest.fail(f"Expected {expected_data}, got {data}")
+                pytest.fail(f"Expected {expected_data!r}, got {data!r}")
 
             while (
-                not self.shutdown_evt.is_set() and
-                len(self.log_stats) > 0 and
-                (self.log_stats[0][0] == "r" or self.log_stats[0][0] == "t")
+                not self.shutdown_evt.is_set()
+                and len(self.log_stats) > 0
+                and (self.log_stats[0][0] == "r" or self.log_stats[0][0] == "t")
             ):
                 stat = self.log_stats.pop(0)
 
                 if stat[0] == "t":
                     sleep = stat[1]
                     self.wait_non_blocking(sleep)
-                else: # should be "r"
+                else:  # should be "r"
                     size = stat[1]
                     to_send = self.log["rx"][:size]
                     self.log["rx"] = self.log["rx"][size:]
@@ -110,8 +113,8 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
                     _socket.sendall(to_send)
         return
 
-
     def wait_non_blocking(self, seconds: int) -> None:
+        """Delay while checking for interrupt."""
         remaining = seconds
         while not self.shutdown_evt and remaining > 0:
             time.sleep(1)
@@ -119,8 +122,10 @@ class TestTCPHandler(socketserver.BaseRequestHandler):
 
 
 @pytest.fixture
-def retcp(monkeypatch: pytest.MonkeyPatch,
-          request: pytest.FixtureRequest) -> Generator[str, Any, Any]:
+def retcp(
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+) -> Generator[str, Any, Any]:
     """Record or replay tcp traffic.
 
     Raises
@@ -159,8 +164,7 @@ def retcp(monkeypatch: pytest.MonkeyPatch,
         port = server.server_address[1]
 
         # Run the server in a background thread
-        tests_thread = TestableThread(
-            target=server.serve_forever)
+        tests_thread = TestableThread(target=server.serve_forever)
 
         tests_thread.start()
     else:
@@ -200,8 +204,11 @@ def retcp(monkeypatch: pytest.MonkeyPatch,
         pytest.fail(msg)
 
 
-def get_patched_methods(mode: Mode, log: TrafficLog,
-                        log_stats: TrafficLogStats) -> PatchMethods:
+def get_patched_methods(
+    mode: Mode,
+    log: TrafficLog,
+    log_stats: TrafficLogStats,
+) -> PatchMethods:
     """Return patched recv, send, close, etc methods.
 
     The methods should be monkeypatched over the corresponding `socket.socket` methods.
@@ -213,7 +220,7 @@ def get_patched_methods(mode: Mode, log: TrafficLog,
     log: dict[str, list[int]]
         Dictionary holding logged traffic (replay) / where traffic will be logged to
         (record). If mode is `DONT_PATCH`, this parameter is ignored.
-    log_stats: list[Tuple[Literal["r", "w", "c"], int]]
+    log_stats: list[tuple[Literal["r", "w", "c"], int]]
         List of read, write and close events and the size of data that was exchanged.
 
     Returns
@@ -245,7 +252,7 @@ def get_record_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
     log: dict[str, list[int]]
         Dictionary where recorded traffic will be logged.
 
-    log_stats: list[Tuple[Literal["r", "w", "c"], int]]
+    log_stats: list[tuple[Literal["r", "w", "c"], int]]
         List of read, write and close events and the size of data that was exchanged.
 
     Returns

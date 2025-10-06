@@ -16,19 +16,23 @@ class TestableThread(Thread):
     REF: https://gist.github.com/sbrugman/59b3535ebcd5aa0e2598293cfa58b6ab
     """
 
-    def __init__(self, *args, **kwargs) -> None: # noqa: ANN002, ANN003
+    def __init__(  # type: ignore[no-untyped-def]
+        self,
+        *args,  # noqa: ANN002
+        **kwargs,  # noqa: ANN003
+    ) -> None:
         """Override the `Thread.__init__` method."""
         super().__init__(*args, **kwargs)
-        self.exc = None
+        self.exc: BaseException | None = None
 
     def run(self) -> None:
         """Override the `Thread.run` method."""
         try:
             super().run()
-        except BaseException as e: # noqa: BLE001
+        except BaseException as e:  # noqa: BLE001
             self.exc = e
 
-    def join(self, timeout: float | None =None) -> None:
+    def join(self, timeout: float | None = None) -> None:
         """Override the `Thread.join` method."""
         super().join(timeout)
         if self.exc:

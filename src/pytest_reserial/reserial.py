@@ -31,6 +31,7 @@ PatchMethods = tuple[
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
+    """Process input parameters for --record and --replay."""
     group = parser.getgroup("reserial")
     group.addoption(
         "--record",
@@ -44,8 +45,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Replay serial traffic.",
     )
-
-
 
 
 @pytest.fixture
@@ -94,7 +93,7 @@ def reserial(
         write_log(log, log_stats, log_path, log_stats_path, test_name)
         return
 
-    if log["rx"] or log["tx"] :
+    if log["rx"] or log["tx"]:
         msg = (
             "Some messages where not replayed:}\n"
             f"Remaining RX:    {len(log['rx'])}\n"
@@ -105,7 +104,6 @@ def reserial(
     if len(log_stats) > 0:
         msg = f"Remaining Stats: {len(log_stats)}\n"
         pytest.fail(msg)
-
 
 
 def get_traffic_log(mode: Mode, log_path: Path, test_name: str) -> TrafficLog:
@@ -153,7 +151,12 @@ def get_traffic_log(mode: Mode, log_path: Path, test_name: str) -> TrafficLog:
     return log
 
 
-def get_traffic_log_stats(mode: Mode, log_path: Path, test_name: str) -> TrafficLogStats:
+def get_traffic_log_stats(
+    mode: Mode,
+    log_path: Path,
+    test_name: str,
+) -> TrafficLogStats:
+    """Load recorded traffic statistics (replay) or create an empty log (record)."""
     if mode == Mode.INVALID:
         msg = "Choose one of 'replay' or 'record', not both"
         raise ValueError(msg)
@@ -177,7 +180,11 @@ def get_traffic_log_stats(mode: Mode, log_path: Path, test_name: str) -> Traffic
     return log
 
 
-def get_patched_methods(mode: Mode, log: TrafficLog, log_stats: TrafficLogStats) -> PatchMethods:
+def get_patched_methods(
+    mode: Mode,
+    log: TrafficLog,
+    log_stats: TrafficLogStats,
+) -> PatchMethods:
     """Return patched read, write, open, etc methods.
 
     The methods should be monkeypatched over the corresponding `Serial` methods.
@@ -189,7 +196,7 @@ def get_patched_methods(mode: Mode, log: TrafficLog, log_stats: TrafficLogStats)
     log: dict[str, list[int]]
         Dictionary holding logged traffic (replay) / where traffic will be logged to
         (record). If mode is `DONT_PATCH`, this parameter is ignored.
-    log_stats: list[Tuple[Literal["r", "w", "c"], int]]
+    log_stats: list[tuple[Literal["r", "w", "c"], int]]
         List of read, write and close events and the size of data that was exchanged.
 
     Returns
@@ -213,7 +220,7 @@ def get_patched_methods(mode: Mode, log: TrafficLog, log_stats: TrafficLogStats)
         return get_replay_methods(log, log_stats)
     if mode == Mode.RECORD:
         return get_record_methods(log, log_stats)
-    return ( # type: ignore[return-value]
+    return (  # type: ignore[return-value]
         Serial.read,
         Serial.write,
         Serial.open,
@@ -224,14 +231,17 @@ def get_patched_methods(mode: Mode, log: TrafficLog, log_stats: TrafficLogStats)
     )
 
 
-def get_replay_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMethods: # noqa: C901
+def get_replay_methods(  # noqa: C901
+    log: TrafficLog,
+    log_stats: TrafficLogStats,
+) -> PatchMethods:
     """Return patched read, write, open, etc methods for replaying logged traffic.
 
     Parameters
     ----------
     log: dict[str, list[int]]
         Dictionary holding logged traffic.
-    log_stats: list[Tuple[Literal["r", "w", "c"], int]]
+    log_stats: list[tuple[Literal["r", "w", "c"], int]]
         List of read, write and close events and the size of data that was exchanged.
 
     Returns
@@ -318,7 +328,6 @@ def get_replay_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
 
         return bytes(data)
 
-
     def replay_close(self: Serial) -> None:
         """Pretend that port was closed."""
         if len(log_stats) > 0:
@@ -329,12 +338,12 @@ def get_replay_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
 
         self.is_open = False
 
-    @property # type: ignore[misc]
-    def replay_in_waiting(self: Serial) -> int: # noqa: ARG001
+    @property  # type: ignore[misc]
+    def replay_in_waiting(self: Serial) -> int:  # noqa: ARG001
         """Return the number of bytes in RX data left to replay."""
         return len(log["rx"])
 
-    return ( # type: ignore[return-value]
+    return (  # type: ignore[return-value]
         replay_read,
         replay_write,
         replay_open,
@@ -349,7 +358,7 @@ def get_replay_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
 def replay_open(self: Serial) -> None:
     """Pretend that port was opened."""
     self.is_open = True
-    self.fd = None # type: ignore[attr-defined]
+    self.fd = None
 
 
 def replay_reconfigure_port(
@@ -375,7 +384,7 @@ def get_record_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
     ----------
     log: dict[str, list[int]]
         Dictionary where recorded traffic will be logged.
-    log_stats: list[Tuple[Literal["r", "w", "c"], int]]
+    log_stats: list[tuple[Literal["r", "w", "c"], int]]
         List of read, write and close events and the size of data that was exchanged.
 
     Returns
@@ -399,7 +408,7 @@ def get_record_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
     real_write = Serial.write
     real_close = Serial.close
 
-    def record_write(self: Serial, data: bytes) -> Union[int, None]:
+    def record_write(self: Serial, data: bytes) -> int | None:
         """Record TX data before writing to the bus.
 
         Monkeypatch this method over Serial.write to record traffic. Parameters and
@@ -407,7 +416,7 @@ def get_record_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
         """
         log["tx"] += data
         log_stats.append(("w", len(data)))
-        written: Union[int, None] = real_write(self, data)
+        written: int | None = real_write(self, data)
         return written
 
     def record_read(self: Serial, size: int = 1) -> bytes:
@@ -425,7 +434,7 @@ def get_record_methods(log: TrafficLog, log_stats: TrafficLogStats) -> PatchMeth
         log_stats.append(("c", -1))
         real_close(self)
 
-    return ( # type: ignore[return-value]
+    return (  # type: ignore[return-value]
         record_read,
         record_write,
         Serial.open,
@@ -451,7 +460,7 @@ def write_log(
         Dictionary holding recorded traffic.
     log_path: str
         The name of the file where recorded traffic is logged.
-    log_stats: list[Tuple[Literal["r", "w", "c"], int]]
+    log_stats: list[tuple[Literal["r", "w", "c"], int]]
         List of read, write and close events and the size of data that was exchanged.
     log_stats_path: str
         The name of the file where recorded traffic events are logged.
@@ -463,11 +472,15 @@ def write_log(
     log_stats_path.touch()
     # Write new data to temporary file.
     tmp_path = Path(test_name + "_" + hex(abs(hash(test_name))).lstrip("0x"))
-    tmp_stats_path = Path(test_name + "_stats_" + hex(abs(hash(test_name))).lstrip("0x"))
+    tmp_stats_path = Path(
+        test_name + "_stats_" + hex(abs(hash(test_name))).lstrip("0x"),
+    )
 
     with (
-        log_path.open("r") as fin, tmp_path.open("w") as fout,
-        log_stats_path.open("r") as fsin, tmp_stats_path.open("w") as fsout,
+        log_path.open("r") as fin,
+        tmp_path.open("w") as fout,
+        log_stats_path.open("r") as fsin,
+        tmp_stats_path.open("w") as fsout,
     ):
         seen = False
         rx = base64.b64encode(bytes(log["rx"])).decode("ascii")
@@ -489,7 +502,6 @@ def write_log(
 
         if not seen:
             fout.write(new_line)
-
 
         seen = False
         for old_stats_line in fsin:
