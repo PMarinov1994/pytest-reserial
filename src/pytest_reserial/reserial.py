@@ -283,18 +283,19 @@ def get_replay_methods(  # noqa: C901
         else:
             msg = (
                 "Written data does not match recorded data: "
-                f"{data!r} != {log['tx'][: len(data)]!r}"
+                f"{data!r} != {log['tx'][:len(data)]!r}"
             )
             pytest.fail(msg)
 
-        if len(log_stats) > 0 and log_stats[0][0] == "w":
-            del log_stats[0]
-        elif len(log_stats) > 0:
-            msg = (
-                "Written data does not match recorded data: "
-                f"expected 'w', got '{log_stats[0][0]}'"
-            )
-            pytest.fail(msg)
+        if len(log_stats) > 0:
+            curr_log = log_stats.pop(0)
+            if curr_log[0] != "w" or curr_log[1] != len(data):
+                msg = (
+                    "Written data does not match recorded data: "
+                    f"Expected to write {curr_log[1]} bytes, "
+                    f"but '{curr_log[0]}' {len(data)} bytes"
+                )
+                pytest.fail(msg)
 
         return len(data)
 
@@ -319,10 +320,11 @@ def get_replay_methods(  # noqa: C901
 
         if len(log_stats) > 0:
             curr_log = log_stats.pop(0)
-            if curr_log[0] != "r" and curr_log[1] != len(data):
+            if curr_log[0] != "r" or curr_log[1] != len(data):
                 msg = (
                     "Written data does not match recorded data: "
-                    f"Expected to read {curr_log[1]} bytes, but read {len(data)} bytes"
+                    f"Expected to read {curr_log[1]} bytes, "
+                    f"but '{curr_log[0]}' {len(data)} bytes"
                 )
                 pytest.fail(msg)
 
@@ -333,7 +335,7 @@ def get_replay_methods(  # noqa: C901
         if len(log_stats) > 0:
             stat = log_stats.pop(0)
             if stat[0] != "c":
-                msg = f"Expected a close status but got {stat[0]}"
+                msg = f"Expected a close status but got {stat[0]}. Stats: {log_stats}"
                 pytest.fail(msg)
 
         self.is_open = False
