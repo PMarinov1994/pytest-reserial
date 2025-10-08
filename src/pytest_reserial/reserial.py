@@ -332,6 +332,9 @@ def get_replay_methods(  # noqa: C901
 
     def replay_close(self: Serial) -> None:
         """Pretend that port was closed."""
+        if not self.is_open:
+            raise PortNotOpenError
+
         if len(log_stats) > 0:
             stat = log_stats.pop(0)
             if stat[0] != "c":
@@ -341,8 +344,11 @@ def get_replay_methods(  # noqa: C901
         self.is_open = False
 
     @property  # type: ignore[misc]
-    def replay_in_waiting(self: Serial) -> int:  # noqa: ARG001
+    def replay_in_waiting(self: Serial) -> int:
         """Return the number of bytes in RX data left to replay."""
+        if not self.is_open:
+            raise PortNotOpenError
+
         return len(log["rx"])
 
     return (  # type: ignore[return-value]
